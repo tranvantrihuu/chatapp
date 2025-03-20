@@ -1,7 +1,8 @@
-// src/pages/Chat.js
+// src/pages/chat.js
 import React, { useState, useEffect } from "react";
-import { db, auth } from "../firebase";
+import { db, auth } from "../firebase"; // Chỉnh sửa đường dẫn theo cấu trúc thư mục của bạn
 import { ref, push, onValue } from "firebase/database";
+import { logoutUser } from "../authService";
 
 const CLOUDINARY_UPLOAD_URL = "https://api.cloudinary.com/v1_1/ddnryyozp/upload";
 const CLOUDINARY_UPLOAD_PRESET = "chatapp_uploads";
@@ -13,6 +14,7 @@ const Chat = () => {
   const [text, setText] = useState("");
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
+  const [newChatEmail, setNewChatEmail] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -52,102 +54,132 @@ const Chat = () => {
     }
   }, [selectedChat, currentUser]);
 
-  const uploadFile = async (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-    const res = await fetch(CLOUDINARY_UPLOAD_URL, {
-      method: "POST",
-      body: formData,
-    });
-    const data = await res.json();
-    return data.secure_url;
-  };
-
   const sendMessage = async () => {
-    if (!selectedChat || !currentUser || !text.trim()) return;
-
-    const user1 = sanitizeEmail(currentUser.email);
-    const user2 = sanitizeEmail(selectedChat);
-    const newMessage = {
-      text,
+    if (!text.trim() || !selectedChat || !currentUser) return;
+    const chatRef = ref(
+      db,
+      `chats/${sanitizeEmail(currentUser.email)}/${sanitizeEmail(selectedChat)}`
+    );
+    const messageData = {
       sender: currentUser.email,
-      timestamp: Date.now(),
+      text: text,
       type: "text",
+      timestamp: Date.now(),
     };
-
-    push(ref(db, `chats/${user1}/${user2}`), newMessage);
-    push(ref(db, `chats/${user2}/${user1}`), newMessage);
+    await push(chatRef, messageData);
     setText("");
   };
 
   const sendFile = async () => {
     if (!file || !selectedChat || !currentUser) return;
     setUploading(true);
-    const url = await uploadFile(file);
-    const user1 = sanitizeEmail(currentUser.email);
-    const user2 = sanitizeEmail(selectedChat);
-    const newMessage = {
-      text: url,
-      sender: currentUser.email,
-      timestamp: Date.now(),
-      type: "image",
-    };
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-    push(ref(db, `chats/${user1}/${user2}`), newMessage);
-    push(ref(db, `chats/${user2}/${user1}`), newMessage);
-    setFile(null);
+      const res = await fetch(CLOUDINARY_UPLOAD_URL, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      const chatRef = ref(
+        db,
+        `chats/${sanitizeEmail(currentUser.email)}/${sanitizeEmail(selectedChat)}`
+      );
+      const messageData = {
+        sender: currentUser.email,
+        type: "file",
+        fileUrl: data.secure_url,
+        fileName: file.name,
+        timestamp: Date.now(),
+      };
+      await push(chatRef, messageData);
+      setFile(null);
+    } catch (error) {
+      console.error("File upload error:", error);
+    }
     setUploading(false);
   };
 
   return (
     <div style={{ display: "flex", height: "500px", border: "1px solid black" }}>
-      {currentUser && (
-        <div style={{ width: "30%", borderRight: "1px solid gray", padding: "10px" }}>
-          <h3>Danh sách chat</h3>
-          <ul>
-            {chats.length > 0 ? (
-              chats.map((email) => (
-                <li
-                  key={email}
-                  onClick={() => setSelectedChat(email)}
-                  style={{ cursor: "pointer", margin: "5px 0" }}
-                >
+      <div style={{ width: "30%", borderRight: "1px solid gray", padding: "10px" }}>
+        <h3>Danh sách chat</h3>
+        {currentUser && (
+          <>
+            <input
+              type="text"
+              placeholder="Nhập email"
+              value={newChatEmail}
+              onChange={(e) => setNewChatEmail(e.target.value)}
+            />
+            <button onClick={() => setSelectedChat(newChatEmail)}>Bắt đầu</button>
+            <ul>
+              {chats.map((email) => (
+                <li key={email} onClick={() => setSelectedChat(email)}>
                   {email}
                 </li>
-              ))
-            ) : (
-              <p>Không có tin nhắn</p>
-            )}
-          </ul>
-        </div>
-      )}
-
+              ))}
+            </ul>
+            <button onClick={logoutUser} style={{ background: "red", color: "white" }}>
+              Đăng xuất
+            </button>
+          </>
+        )}
+      </div>
       <div style={{ flex: 1, padding: "10px" }}>
         {currentUser ? (
           selectedChat ? (
             <>
               <h3>Đang chat với: {selectedChat}</h3>
-              <div
-                style={{
-                  height: "350px",
-                  overflowY: "scroll",
-                  border: "1px solid gray",
-                  padding: "10px",
-                  marginBottom: "10px",
-                }}
-              >
-                {messages.map((msg, index) => (
-                  <div key={index} style={{ marginBottom: "10px" }}>
-                    {msg.type === "text" ? (
-                      <p>
-                        <strong>{msg.sender}:</strong> {msg.text}
-                      </p>
-                    ) : (
-                      <img src={msg.text} alt="Uploaded" style={{ maxWidth: "100%" }} />
-                    )}
-                  </div>
-                ))}
+              <div style={{ height: "350px", overflowY: "scroll" }}>
+                {messages.map((msg, index) => {
+                  const isImage =
+                    msg.fileName &&
+                    (msg.fileName.endsWith(".jpg") ||
+                      msg.fileName.endsWith(".jpeg") ||
+                      msg.fileName.endsWith(".png") ||
+                      msg.fileName.endsWith(".gif"));
+                  const isCurrentUser = msg.sender === currentUser.email;
+                  const containerStyle = {
+                    textAlign: isCurrentUser ? "right" : "left",
+                    marginBottom: "10px",
+                  };
+                  return (
+                    <div key={index} style={containerStyle}>
+                      {msg.type === "text" ? (
+                        <p
+                          style={{
+                            backgroundColor: isCurrentUser ? "#ADD8E6" : "#EAEAEA",
+                            color: "#000",
+                            padding: "10px",
+                            borderRadius: "10px",
+                            display: "inline-block",
+                            maxWidth: "70%",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {msg.text}
+                        </p>
+                      ) : (
+                        <p>
+                          <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer">
+                            {isImage ? (
+                              <img
+                                src={msg.fileUrl}
+                                alt={msg.fileName}
+                                style={{ maxWidth: "100px", maxHeight: "100px" }}
+                              />
+                            ) : (
+                              <>📂 {msg.fileName}</>
+                            )}
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <input
                 type="text"
@@ -158,7 +190,7 @@ const Chat = () => {
               <button onClick={sendMessage}>Gửi tin nhắn</button>
               <br />
               <input type="file" onChange={(e) => setFile(e.target.files[0])} />
-              <button onClick={sendFile} disabled={uploading}>
+              <button onClick={sendFile} disabled={uploading || !file}>
                 {uploading ? "Đang tải..." : "Gửi file"}
               </button>
             </>

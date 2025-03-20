@@ -31,9 +31,9 @@ const Login = () => {
   return (
     <div>
       <h2>Đăng nhập</h2>
-      <input type="email" placeholder="Email" onChange={(e) => setEmail(e.target.value)} />
-      <input type="password" placeholder="Mật khẩu" onChange={(e) => setPassword(e.target.value)} />
-      <button onClick={handleEmailLogin}>Đăng nhập bằng Email</button>
+      <input type="email" placeholder="username / email" onChange={(e) => setEmail(e.target.value)} />
+      <input type="password" placeholder="password" onChange={(e) => setPassword(e.target.value)} />
+      <button onClick={handleEmailLogin}>Đăng nhập</button>
       <button onClick={handleGoogleLogin}>Đăng nhập bằng Google</button>
       <p>Bạn chưa có tài khoản? <a href="/signup">Đăng ký ngay</a></p>
     </div>
